@@ -1,0 +1,7 @@
+fastapi
+python-multipart
+vosk
+gTTS
+requests
+uvicorn[standard]
+websockets
