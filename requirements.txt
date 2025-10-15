@@ -5,3 +5,5 @@ gTTS
 requests
 uvicorn[standard]
 websockets
+pydub
+ffmpeg-python
