@@ -13,17 +13,29 @@ processador_audio = ProcessaAudio()
 
 origins = [
     "http://localhost:8080",
-    "api do mobile",
-    "api do front para garantir",
-    "api do back"
+    "https://teste-trasncricao-voz.onrender.com",
+    "https://lyria-back.onrender.com"
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins, 
     allow_credentials=True,
-    allow_methods=["GET","POST"],  
-    allow_headers=["ver os headers depois"],  
+    allow_methods=["GET", "POST", "OPTIONS"], 
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "User-Agent",
+        "DNT",
+        "Cache-Control",
+        "X-Requested-With",
+        "Sec-WebSocket-Key",        
+        "Sec-WebSocket-Version",    
+        "Sec-WebSocket-Extensions", 
+        "Sec-WebSocket-Protocol"    
+    ],
 )
 
 @app.websocket("/ws")
