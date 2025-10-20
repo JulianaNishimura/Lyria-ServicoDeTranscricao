@@ -6,5 +6,4 @@ requests
 uvicorn[standard]
 websockets
 pydub
-io
 logging
