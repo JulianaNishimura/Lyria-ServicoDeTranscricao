@@ -52,7 +52,6 @@ app.add_middleware(
     ],
 )
 
-# ✅ Endpoint raiz para health check
 @app.get("/")
 async def root():
     return {
@@ -65,7 +64,6 @@ async def root():
         }
     }
 
-# ✅ Endpoint de configuração para o frontend
 @app.get("/config")
 async def get_config():
     return {
@@ -73,7 +71,6 @@ async def get_config():
         "status": "online"
     }
 
-# ✅ Health check
 @app.get("/health")
 async def health_check():
     return {
@@ -81,10 +78,8 @@ async def health_check():
         "api_back_configured": API_BACK is not None
     }
 
-# ✅ Endpoint de teste TTS
 @app.get("/test-tts")
 async def test_tts(text: str = "Olá, este é um teste de síntese de voz"):
-    """Testa apenas a síntese de voz"""
     logger.info(f"🧪 Teste TTS: {text}")
     audio_bytes = processador_audio.synthesize_text_to_speech(text)
     
@@ -97,7 +92,6 @@ async def test_tts(text: str = "Olá, este é um teste de síntese de voz"):
     else:
         return JSONResponse({"error": "Falha ao gerar áudio"}, status_code=500)
 
-# ✅ WebSocket endpoint melhorado
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -105,8 +99,8 @@ async def websocket_endpoint(websocket: WebSocket):
     
     reconhecedor_voz = processador_audio.create_recognizer()
     audio_buffer = b""
-    MIN_BUFFER_SIZE = 8192  # ✅ Aumentado para 8KB (era 4KB)
-    
+    MIN_BUFFER_SIZE = 8192  
+
     try:
         while True:
             audio_data = await websocket.receive_bytes()
@@ -114,7 +108,6 @@ async def websocket_endpoint(websocket: WebSocket):
             
             audio_buffer += audio_data
             
-            # ✅ Processar quando tiver dados suficientes
             if len(audio_buffer) >= MIN_BUFFER_SIZE:
                 logger.info(f"🎤 Processando {len(audio_buffer)} bytes acumulados")
                 
@@ -148,7 +141,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                 logger.error(f"❌ Erro IA: {e}")
                                 resposta_texto = "Desculpe, erro ao conectar com a IA."
                         
-                        # ✅ Sintetizar
                         logger.info("🔊 Gerando áudio...")
                         audio_bytes = processador_audio.synthesize_text_to_speech(resposta_texto)
                         
@@ -163,7 +155,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "text": resposta_texto
                             })
                     
-                    # ✅ Limpar buffer
                     audio_buffer = b""
                     
                 except Exception as e:
@@ -177,7 +168,6 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         logger.info("🔚 Conexão encerrada")
 
-# ✅ Para rodar localmente
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
