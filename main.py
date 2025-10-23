@@ -53,46 +53,6 @@ app.add_middleware(
     ],
 )
 
-@app.get("/")
-async def root():
-    return {
-        "status": "ok",
-        "service": "Lyria - Serviço de Transcrição",
-        "endpoints": {
-            "websocket": "/ws",
-            "config": "/config",
-            "health": "/health"
-        }
-    }
-
-@app.get("/config")
-async def get_config():
-    return {
-        "websocket_url": WEBSOCKET_URL,
-        "status": "online"
-    }
-
-@app.get("/health")
-async def health_check():
-    return {
-        "status": "healthy",
-        "api_back_configured": API_BACK is not None
-    }
-
-@app.get("/test-tts")
-async def test_tts(text: str = "Olá, este é um teste de síntese de voz"):
-    logger.info(f"🧪 Teste TTS: {text}")
-    audio_bytes = processador_audio.synthesize_text_to_speech(text)
-    
-    if audio_bytes:
-        return StreamingResponse(
-            io.BytesIO(audio_bytes),
-            media_type="audio/mpeg",
-            headers={"Content-Disposition": "attachment; filename=teste.mp3"}
-        )
-    else:
-        return JSONResponse({"error": "Falha ao gerar áudio"}, status_code=500)
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
