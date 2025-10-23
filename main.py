@@ -7,14 +7,12 @@ import io
 import requests
 import logging
 
-# ✅ Configurar logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# ✅ Variáveis de ambiente
 API_BACK = os.environ.get("API_do_BACK")
 WEBSOCKET_URL = os.environ.get("WEBSOCKET_URL", "ws://localhost:10000/ws")
 
@@ -24,7 +22,6 @@ if not API_BACK:
 app = FastAPI(title="Lyria - Serviço de Transcrição de Voz")
 processador_audio = ProcessaAudio()
 
-# ✅ CORS configurado corretamente
 origins = [
     "http://localhost:8080",
     "http://localhost:5173",
