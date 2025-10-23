@@ -1,141 +1,64 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from processa_audio import ProcessaAudio 
 import os
-import io
-import requests
 import logging
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from processa_audio import ProcessaAudio
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-API_BACK = os.environ.get("API_do_BACK")
-WEBSOCKET_URL = os.environ.get("WEBSOCKET_URL", "ws://localhost:10000/ws")
+API_BACK = os.getenv("API_do_BACK")
+app = FastAPI()
 
-if not API_BACK:
-    logger.warning("⚠️ API_do_BACK não configurada! Configure no Render.")
-
-app = FastAPI(title="Lyria - Serviço de Transcrição de Voz")
-processador_audio = ProcessaAudio()
-
-origins = [
-    "http://localhost:8080",
-    "http://localhost:5173",
-    "http://127.0.0.1:8080",
-    "https://teste-trasncricao-voz.onrender.com",
-    "wss://teste-trasncricao-voz.onrender.com/ws",
-    "https://lyriafront.onrender.com",
-    "https://lyria-back.onrender.com"
-]
-
+# CORS simples
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, 
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS", "DELETE", "PUT"],
-    allow_headers=[
-        "Content-Type",
-        "Authorization",
-        "Accept",
-        "Origin",
-        "User-Agent",
-        "DNT",
-        "Cache-Control",
-        "X-Requested-With",
-        "Sec-WebSocket-Key",
-        "Sec-WebSocket-Version",
-        "Sec-WebSocket-Extensions",
-        "Sec-WebSocket-Protocol"
-    ],
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
+# Servir frontend
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Processador de áudio
+processador = ProcessaAudio()
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    logger.info("✅ Conexão WebSocket aceita")
-    
-    reconhecedor_voz = processador_audio.create_recognizer()
-    audio_buffer = b""
-    MIN_BUFFER_SIZE = 8192  
+    reconhecedor = processador.criar_reconhecedor()
 
     try:
         while True:
-            audio_data = await websocket.receive_bytes()
-            logger.info(f"📥 Chunk: {len(audio_data)} bytes")
-            
-            audio_buffer += audio_data
-            
-            if len(audio_buffer) >= MIN_BUFFER_SIZE:
-                logger.info(f"🎤 Processando {len(audio_buffer)} bytes acumulados")
-                
-                try:
-                    transcricao = processador_audio.transcribe_audio(
-                        reconhecedor_voz, 
-                        audio_buffer
-                    )
-                    
-                    if transcricao:
-                        logger.info(f"📝 TRANSCRIÇÃO: '{transcricao}'")
-                        
-                        if not API_BACK:
-                            resposta_texto = "Erro: API backend não configurada."
-                        else:
-                            try:
-                                logger.info(f"🤖 Chamando IA...")
-                                response_ai = requests.post(
-                                    f"{API_BACK}/Lyria/conversar",
-                                    json={"pergunta": transcricao, "persona": "social"},
-                                    timeout=30
-                                )
-                                response_ai.raise_for_status()
-                                resposta_texto = response_ai.json().get(
-                                    "resposta", 
-                                    "Desculpe, não entendi."
-                                )
-                                logger.info(f"💬 IA: {resposta_texto[:80]}...")
-                                
-                            except Exception as e:
-                                logger.error(f"❌ Erro IA: {e}")
-                                resposta_texto = "Desculpe, erro ao conectar com a IA."
-                        
-                        logger.info("🔊 Gerando áudio...")
-                        audio_bytes = processador_audio.synthesize_text_to_speech(resposta_texto)
-                        
-                        if audio_bytes:
-                            logger.info(f"📤 Enviando {len(audio_bytes)} bytes de áudio")
-                            await websocket.send_bytes(audio_bytes)
-                            logger.info("✅ Áudio enviado!")
-                        else:
-                            logger.error("❌ Falha ao gerar áudio")
-                            await websocket.send_json({
-                                "error": "Falha ao gerar áudio",
-                                "text": resposta_texto
-                            })
-                    
-                    audio_buffer = b""
-                    
-                except Exception as e:
-                    logger.error(f"❌ Erro processamento: {e}", exc_info=True)
-                    audio_buffer = b""
-                    
-    except WebSocketDisconnect:
-        logger.info("🔌 Cliente desconectado")
-    except Exception as e:
-        logger.error(f"❌ Erro WebSocket: {e}", exc_info=True)
-    finally:
-        logger.info("🔚 Conexão encerrada")
+            webm_chunk = await websocket.receive_bytes()
+            texto = processador.transcrever(reconhecedor, webm_chunk)
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 10000))
-    logger.info(f"🚀 Iniciando servidor na porta {port}")
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=port,
-        log_level="info"
-    )
+            if not texto:
+                continue
+
+            logger.info(f"Transcrição: '{texto}'")
+
+            # Chamar IA
+            resposta = "Desculpe, não entendi."
+            if API_BACK:
+                try:
+                    import requests
+                    r = requests.post(
+                        f"{API_BACK}/Lyria/conversar",
+                        json={"pergunta": texto, "persona": "social"},
+                        timeout=10
+                    )
+                    if r.ok:
+                        resposta = r.json().get("resposta", resposta)
+                except Exception as e:
+                    logger.error(f"Erro na IA: {e}")
+
+            audio_bytes = processador.texto_para_audio(resposta)
+            await websocket.send_bytes(audio_bytes)
+
+    except Exception as e:
+        logger.error(f"Erro no WebSocket: {e}")
+    finally:
+        await websocket.close()

@@ -1,9 +1,6 @@
 fastapi
-python-multipart
+uvicorn
 vosk
-gTTS
-requests
-uvicorn[standard]
-websockets
 pydub
-logging
+gtts
+requests
