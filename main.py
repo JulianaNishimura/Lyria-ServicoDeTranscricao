@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 API_BACK = os.getenv("API_do_BACK")
 app = FastAPI()
 
-# CORS simples
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,10 +18,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Servir frontend
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Processador de áudio
 processador = ProcessaAudio()
 
 @app.websocket("/ws")
@@ -40,7 +35,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
             logger.info(f"Transcrição: '{texto}'")
 
-            # Chamar IA
             resposta = "Desculpe, não entendi."
             if API_BACK:
                 try:
