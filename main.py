@@ -1,8 +1,9 @@
 import os
 import logging
 from fastapi import FastAPI, WebSocket
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from starlette.websockets import WebSocketState  # ⬅️ IMPORTANTE
 from processa_audio import ProcessaAudio
 
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +20,10 @@ app.add_middleware(
 )
 
 processador = ProcessaAudio()
+
+@app.get("/")
+async def serve_frontend():
+    return FileResponse("index.html")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -55,4 +60,5 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Erro no WebSocket: {e}")
     finally:
-        await websocket.close()
+        if websocket.client_state == WebSocketState.CONNECTED:
+            await websocket.close()
