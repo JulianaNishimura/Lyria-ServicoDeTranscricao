@@ -27,6 +27,7 @@ origins = [
     "http://localhost:5173",
     "http://127.0.0.1:8080",
     "https://teste-trasncricao-voz.onrender.com",
+    "wss://teste-trasncricao-voz.onrender.com",
     "https://lyriafront.onrender.com",
     "https://lyria-back.onrender.com"
 ]
