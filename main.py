@@ -24,10 +24,10 @@ processador = ProcessaAudio()
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
-        webm_data = await websocket.receive_bytes()
+        m4a_data = await websocket.receive_bytes()
         
         reconhecedor = processador.criar_reconhecedor()
-        texto = processador.transcrever(reconhecedor, webm_data)
+        texto = processador.transcrever(reconhecedor, m4a_data)
 
         if not texto:
             texto = "Não entendi o áudio."

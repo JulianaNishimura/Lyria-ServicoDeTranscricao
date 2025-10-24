@@ -17,9 +17,9 @@ class ProcessaAudio:
         rec.SetWords(True)
         return rec
 
-    def transcrever(self, reconhecedor, webm_data: bytes):
+    def transcrever(self, reconhecedor, audio_data: bytes):
         try:
-            audio = AudioSegment.from_file(io.BytesIO(webm_data), format="webm")
+            audio = AudioSegment.from_file(io.BytesIO(audio_data), format="m4a")
             audio = audio.set_frame_rate(self.sample_rate).set_channels(1).set_sample_width(2)
             pcm_data = audio.raw_data
             if reconhecedor.AcceptWaveform(pcm_data):
