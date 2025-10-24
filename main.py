@@ -39,7 +39,7 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 r = requests.post(
                     f"{API_BACK}/Lyria/conversar",
-                    json={"pergunta": texto, "persona": "social"},
+                    json={"pergunta": texto, "persona": "professor"},
                     timeout=10
                 )
                 if r.ok:
