@@ -19,7 +19,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-processador = ProcessaAudio()@app.websocket("/ws")
+processador = ProcessaAudio()
+@app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
