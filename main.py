@@ -19,22 +19,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-processador = ProcessaAudio()
-@app.websocket("/ws")
+processador = ProcessaAudio()@app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         m4a_data = await websocket.receive_bytes()
-        
+        logger.info(f"📥 Recebido áudio com {len(m4a_data)} bytes")
+
         reconhecedor = processador.criar_reconhecedor()
         texto = processador.transcrever(reconhecedor, m4a_data)
 
         if not texto:
             texto = "Não entendi o áudio."
 
-        logger.info(f"Transcrição: '{texto}'")
+        logger.info(f"🗣️ Texto reconhecido: '{texto}'")
 
+        # Resposta inicial padrão
         resposta = "Desculpe, não entendi."
+
+        # 🔗 Chama a IA (API_BACK)
         if API_BACK:
             try:
                 r = requests.post(
@@ -47,11 +50,12 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception as e:
                 logger.error(f"Erro na IA: {e}")
 
-        audio_bytes = processador.texto_para_audio(resposta)
-        await websocket.send_bytes(audio_bytes)
+        # 💬 Agora enviamos o texto da resposta, não áudio
+        await websocket.send_text(resposta)
+        logger.info(f"📤 Texto enviado ao cliente: {resposta}")
 
     except Exception as e:
-        logger.error(f"Erro no WebSocket: {e}")
+        logger.error(f"Erro no WebSocket: {e}", exc_info=True)
     finally:
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.close()
