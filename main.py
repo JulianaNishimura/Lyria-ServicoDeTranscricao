@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 API_BACK = os.getenv("API_do_BACK")
 ROBOT_API = os.getenv("ROBOT_API")
-WHISPER_CPP = "/app/whisper.cpp/main"
-MODEL_PATH = "/app/whisper.cpp/models/ggml-tiny.bin"
+WHISPER_CPP = os.getenv("WHISPER_BIN", "/app/whisper_main")
+MODEL_PATH = os.getenv("MODEL_PATH", "/app/ggml-tiny.bin")
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])

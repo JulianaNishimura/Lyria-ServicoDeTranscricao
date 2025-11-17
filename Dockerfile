@@ -3,21 +3,29 @@ FROM python:3.11-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
-    git build-essential cmake libopenblas-dev ffmpeg wget \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    git \
+    build-essential \
+    cmake \
+    ffmpeg \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN git clone https://github.com/ggerganov/whisper.cpp.git && \
     cd whisper.cpp && \
-    cmake -B build && \
-    cmake --build build --config Release && \
-    ./models/download-ggml-model.sh tiny
+    cmake -B build -DWHISPER_CUBLAS=OFF && \
+    cmake --build build --config Release -- -j$(nproc) && \
+    cp build/bin/main /app/whisper_main
+
+RUN cd whisper.cpp && ./models/download-ggml-model.sh tiny
+
+RUN cp whisper.cpp/models/ggml-tiny.bin /app/ggml-tiny.bin
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8080
+ENV WHISPER_BIN=/app/whisper_main
+ENV MODEL_PATH=/app/ggml-tiny.bin
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
