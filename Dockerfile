@@ -8,21 +8,19 @@ RUN apt-get update && apt-get install -y \
     cmake \
     ffmpeg \
     wget \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/ggerganov/whisper.cpp.git && \
-    cd whisper.cpp && \
-    cmake -B build -DWHISPER_CUBLAS=OFF && \
-    cmake --build build --config Release -- -j$(nproc)
+RUN git clone https://github.com/ggerganov/whisper.cpp.git /app/whisper.cpp && \
+    cd /app/whisper.cpp && \
+    make clean || true && \
+    WHISPER_NO_AVX=1 make -j$(nproc)
 
-RUN ls -lh /app/whisper.cpp/build/bin/ && \
+RUN ls -lh /app/whisper.cpp/build/bin || true && \
     chmod +x /app/whisper.cpp/build/bin/main
 
-RUN cd whisper.cpp && bash ./models/download-ggml-model.sh tiny
-
-RUN cp whisper.cpp/models/ggml-tiny.bin /app/ggml-tiny.bin
-
-RUN ls -lh /app/whisper.cpp/build/bin/main && \
+RUN wget -q -O /app/ggml-tiny.bin \
+    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin && \
     ls -lh /app/ggml-tiny.bin
 
 COPY requirements.txt .
