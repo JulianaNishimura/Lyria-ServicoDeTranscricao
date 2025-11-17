@@ -1,145 +1,59 @@
 import os
-import tempfile
-import io
 import logging
-import requests
-import subprocess
-from pathlib import Path
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
-from pydub import AudioSegment
-from gtts import gTTS
+from processa_audio import ProcessaAudio
+import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 API_BACK = os.getenv("API_do_BACK")
-ROBOT_API = os.getenv("ROBOT_API")
-
-WHISPER_CLI = os.getenv("WHISPER_CLI", "/app/whisper.cpp/build/bin/whisper-cli")
-MODEL_PATH   = os.getenv("MODEL_PATH", "/app/ggml-tiny.bin")
-
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-@app.on_event("startup")
-async def startup_event():
-    logger.info(f"whisper-cli exists: {Path(WHISPER_CLI).exists()}")
-    logger.info(f"Model exists: {Path(MODEL_PATH).exists()}")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-def transcrever_whisper(audio_bytes: bytes) -> str:
-    if len(audio_bytes) < 1500:
-        return ""  # áudio muito curto
-
-    try:
-        audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
-        audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
-
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp_path = tmp.name
-            audio.export(tmp_path, format="wav")
-
-        result = subprocess.run(
-            [
-                WHISPER_CLI,
-                "-m", MODEL_PATH,
-                "-f", tmp_path,
-                "-l", "pt",
-                "--no-timestamps",
-                "--print-color", "false",
-                "--output-file", "-",  # printa no stdout
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,  # mais rápido
-            timeout=15
-        )
-
-        os.remove(tmp_path)
-
-        if result.returncode != 0:
-            return ""
-
-        texto = result.stdout.decode("utf-8", errors="ignore").strip().lower()
-
-        # limpeza simples e RÁPIDA
-        texto = texto.replace("\n", " ").strip()
-
-        return texto
-
-    except subprocess.TimeoutExpired:
-        logger.error("Whisper timeout")
-        return ""
-    except Exception as e:
-        logger.error(f"Erro Whisper: {e}")
-        return ""
-
-def texto_para_audio(texto: str) -> bytes:
-    try:
-        tts = gTTS(text=texto or "Desculpe, não entendi.", lang="pt")
-        buf = io.BytesIO()
-        tts.write_to_fp(buf)
-        buf.seek(0)
-        return buf.read()
-    except Exception as e:
-        logger.error(f"TTS erro: {e}")
-        return b""
-
-async def enviar_comando_robo(acao: str, valor=None):
-    if not ROBOT_API:
-        return
-    try:
-        payload = {"acao": acao}
-        if valor is not None:
-            payload["valor"] = valor
-        requests.post(f"{ROBOT_API}/comando", json=payload, timeout=3)
-    except:
-        pass
-
+processador = ProcessaAudio()
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-
     try:
-        data = await websocket.receive_bytes()
+        m4a_data = await websocket.receive_bytes()
+        logger.info(f"📥 Recebido áudio com {len(m4a_data)} bytes")
 
-        texto = transcrever_whisper(data)
+        reconhecedor = processador.criar_reconhecedor()
+        texto = processador.transcrever(reconhecedor, m4a_data)
+
         if not texto:
-            resposta = "não entendi"
-        else:
-            resposta = "Desculpe, não entendi."
+            texto = "Não entendi o áudio."
 
-        # wake word
-        if any(x in texto for x in ["lyria", "liria", "líria"]):
+        logger.info(f"🗣️ Texto reconhecido: '{texto}'")
 
-            if "frente" in texto:
-                await enviar_comando_robo("frente", 10)
-                resposta = "Andando para frente."
+        resposta = "Desculpe, não entendi."
 
-            elif "trás" in texto or "tras" in texto or "recuar" in texto:
-                await enviar_comando_robo("tras", 10)
-                resposta = "Andando para trás."
+        if API_BACK:
+            try:
+                r = requests.post(
+                    f"{API_BACK}/Lyria/conversar",
+                    json={"pergunta": texto, "persona": "professor"},
+                    timeout=10
+                )
+                if r.ok:
+                    resposta = r.json().get("resposta", resposta)
+            except Exception as e:
+                logger.error(f"Erro na IA: {e}")
 
-            elif "esquerda" in texto:
-                await enviar_comando_robo("esquerda")
-                resposta = "Virando à esquerda."
-
-            elif "direita" in texto:
-                await enviar_comando_robo("direita")
-                resposta = "Virando à direita."
-
-            elif "parar" in texto:
-                await enviar_comando_robo("parar")
-                resposta = "Parando."
-
-        # enviar áudio final
-        audio_resp = texto_para_audio(resposta)
-        if websocket.client_state == WebSocketState.CONNECTED:
-            await websocket.send_bytes(audio_resp)
+        await websocket.send_text(resposta)
+        logger.info(f"📤 Texto enviado ao cliente: {resposta}")
 
     except Exception as e:
-        logger.error(f"WS erro: {e}")
-
+        logger.error(f"Erro no WebSocket: {e}", exc_info=True)
     finally:
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.close()
