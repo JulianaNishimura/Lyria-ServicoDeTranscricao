@@ -4,7 +4,6 @@ import logging
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
-from vosk import Model, KaldiRecognizer
 import requests
 import wave
 import io
