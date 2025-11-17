@@ -3,32 +3,25 @@ FROM python:3.11-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
-    git \
-    build-essential \
-    cmake \
-    ffmpeg \
-    wget \
-    libsndfile1 \
+    git build-essential cmake ffmpeg wget libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone https://github.com/ggerganov/whisper.cpp.git /app/whisper.cpp && \
     cd /app/whisper.cpp && \
     make clean || true && \
-    WHISPER_NO_AVX=1 make -j$(nproc)
+    WHISPER_NO_AVX=1 make -j$(nproc) whisper-cli
 
-RUN ls -lh /app/whisper.cpp/build/bin || true && \
-    chmod +x /app/whisper.cpp/build/bin/whisper-cli
+RUN chmod +x /app/whisper.cpp/build/bin/whisper-cli
 
 RUN wget -q -O /app/ggml-tiny.bin \
-    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin && \
-    ls -lh /app/ggml-tiny.bin
+    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV WHISPER_CPP=/app/whisper.cpp/build/bin/whisper-cli
+ENV WHISPER_CLI=/app/whisper.cpp/build/bin/whisper-cli
 ENV MODEL_PATH=/app/ggml-tiny.bin
 ENV PYTHONUNBUFFERED=1
 
