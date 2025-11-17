@@ -64,13 +64,16 @@ def transcrever_whisper(audio_bytes: bytes) -> str:
         # Executar whisper.cpp - REMOVIDO stderr para esconder warnings
         logger.info("Running whisper.cpp...")
         result = subprocess.run(
-            [WHISPER_CPP, "-m", MODEL_PATH, "-f", "/dev/stdin", 
-             "--language", "pt", "--threads", "4", "--no-timestamps"],
+            [
+                WHISPER_CPP, "-m", MODEL_PATH, "-f", "/dev/stdin",
+                "--language", "pt", "--threads", "4", "--no-timestamps"
+            ],
             input=wav_data,
-            capture_output=True,
-            timeout=15,
-            stderr=subprocess.DEVNULL  # IGNORA os warnings do stderr
+            stdout=subprocess.PIPE,   # <--- usamos isso
+            stderr=subprocess.DEVNULL, # <--- e isso
+            timeout=15
         )
+
 
         if result.returncode != 0:
             logger.error(f"Whisper process failed with code {result.returncode}")
