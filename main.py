@@ -1,16 +1,23 @@
 import os
+import io
+import json
 import logging
+import requests
+import subprocess
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
-from processa_audio import ProcessaAudio
-import requests
+from pydub import AudioSegment
+from gtts import gTTS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 API_BACK = os.getenv("API_do_BACK")
 ROBOT_API = os.getenv("ROBOT_API")
+
+WHISPER_CPP = "/app/whisper.cpp/main"
+MODEL_PATH = "/app/whisper.cpp/models/ggml-tiny.bin" 
 
 app = FastAPI()
 
@@ -21,62 +28,95 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-processador = ProcessaAudio()
+def transcrever_whisper(m4a_bytes: bytes) -> str:
+    try:
+        audio = AudioSegment.from_file(io.BytesIO(m4a_bytes), format="m4a")
+        audio = audio.set_frame_rate(16000).set_channels(1)
+        wav_io = io.BytesIO()
+        audio.export(wav_io, format="wav")
+        wav_io.seek(0)
+
+        result = subprocess.run([
+            WHISPER_CPP,
+            "-m", MODEL_PATH,
+            "-f", "/dev/stdin",
+            "--language", "pt",
+            "--max-len", "1",
+            "--no-timestamps",
+            "--threads", "4"
+        ], input=wav_io.read(), capture_output=True, timeout=12)
+
+        texto = result.stdout.decode("utf-8", errors="ignore")
+        linhas = [l.strip() for l in texto.split("\n") if l.strip() and not l.startswith("[")]
+        return " ".join(linhas).strip().lower()
+
+    except subprocess.TimeoutExpired:
+        logger.warning("Whisper demorou demais")
+        return ""
+    except Exception as e:
+        logger.error(f"Erro no Whisper: {e}")
+        return ""
+
+def texto_para_audio(texto: str) -> bytes:
+    tts = gTTS(text=texto or "Desculpe, não entendi.", lang="pt", slow=False)
+    buffer = io.BytesIO()
+    tts.write_to_fp(buffer)
+    buffer.seek(0)
+    return buffer.read()
 
 async def enviar_comando_robo(acao: str, valor: int | None = None):
     if not ROBOT_API:
-        return "Robô não configurado."
+        return
     try:
         payload = {"acao": acao}
         if valor is not None:
             payload["valor"] = valor
-        r = requests.post(f"{ROBOT_API}/comando", json=payload, timeout=5)
-        return r.json().get("resposta", "OK") if r.ok else "Erro no robô"
+        requests.post(f"{ROBOT_API}/comando", json=payload, timeout=5)
     except:
-        return "Falha na comunicação com o robô"
+        pass
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         m4a_data = await websocket.receive_bytes()
-        reconhecedor = processador.criar_reconhecedor()
-        texto = processador.transcrever(reconhecedor, m4a_data).strip()
-        if not texto:
-            await websocket.send_text("Não entendi o áudio.")
-            return
+        logger.info(f"Recebido áudio: {len(m4a_data)} bytes")
 
-        texto_lower = texto.lower()
+        texto = transcrever_whisper(m4a_data)
+        if not texto:
+            texto = "não entendi o áudio"
+
+        logger.info(f"Transcrito: '{texto}'")
         resposta = "Desculpe, não entendi."
 
-        if any(chave in texto_lower for chave in ["lyria", "líria", "liria"]):
-
-            if any(frase in texto_lower for frase in ["para frente", "pra frente", "anda pra frente", "vai pra frente", "de um passo", "dê um passo", "1 passo", "um passo", "ande 10", "10 centímetros", "10 cm"]):
+        if any(nome in texto for nome in ["lyria", "líria", "liria"]):
+            if any(cmd in texto for cmd in ["frente", "um passo", "10 cm", "10 centímetros", "pra frente"]):
                 await enviar_comando_robo("frente", 10)
-                resposta = "Andando 10 cm para frente."
+                resposta = "Andando 10 centímetros para frente."
 
-            elif "ande bastante" in texto_lower or "vai bastante" in texto_lower:
+            elif any(cmd in texto for cmd in ["bastante", "30 cm"]):
                 await enviar_comando_robo("frente", 30)
-                resposta = "Andando 30 cm para frente."
+                resposta = "Andando 30 centímetros para frente."
 
-            elif any(frase in texto_lower for frase in ["para trás", "pra trás", "anda pra trás", "recua", "recue"]):
+            elif any(cmd in texto for cmd in ["trás", "recua", "recue"]):
                 await enviar_comando_robo("tras", 15)
                 resposta = "Andando para trás."
 
-            elif any(frase in texto_lower for frase in ["esquerda", "à esquerda", "vire esquerda", "vira esquerda"]):
+            elif "esquerda" in texto:
                 await enviar_comando_robo("esquerda", 90)
                 resposta = "Virando à esquerda."
 
-            elif any(frase in texto_lower for frase in ["direita", "à direita", "vire direita", "vira direita"]):
+            elif "direita" in texto:
                 await enviar_comando_robo("direita", 90)
                 resposta = "Virando à direita."
 
-            elif any(frase in texto_lower for frase in ["parar", "pare", "stop", "freia", "freie"]):
+            elif any(cmd in texto for cmd in ["parar", "pare", "stop", "freia"]):
                 await enviar_comando_robo("parar")
                 resposta = "Parando."
 
             if resposta != "Desculpe, não entendi.":
-                await websocket.send_text(resposta)
+                audio = texto_para_audio(resposta)
+                await websocket.send_bytes(audio)
                 return
 
         if API_BACK:
@@ -86,14 +126,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     json={"pergunta": texto, "persona": "professor"},
                     timeout=15
                 )
-                resposta = r.json().get("resposta", resposta) if r.ok else "Estou com problema agora."
+                if r.ok:
+                    resposta = r.json().get("resposta", resposta)
             except:
-                resposta = "Não consegui responder agora."
+                resposta = "Tô com um probleminha agora, tenta de novo."
 
-        await websocket.send_text(resposta)
+        audio_resposta = texto_para_audio(resposta)
+        await websocket.send_bytes(audio_resposta)
 
     except Exception as e:
-        logger.error(f"Erro: {e}", exc_info=True)
+        logger.error(f"Erro no WebSocket: {e}", exc_info=True)
     finally:
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.close()
