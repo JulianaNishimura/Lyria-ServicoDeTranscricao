@@ -27,7 +27,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         m4a_data = await websocket.receive_bytes()
         logger.info(f"📥 Recebido áudio com {len(m4a_data)} bytes")
-
+        
         reconhecedor = processador.criar_reconhecedor()
         texto = processador.transcrever(reconhecedor, m4a_data)
 
