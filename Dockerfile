@@ -8,10 +8,10 @@ RUN apt-get update && apt-get install -y \
 
 RUN git clone https://github.com/ggerganov/whisper.cpp.git /app/whisper.cpp && \
     cd /app/whisper.cpp && \
-    make clean || true && \
-    WHISPER_NO_AVX=1 make -j$(nproc) whisper-cli
+    WHISPER_NO_AVX=1 make -j$(nproc) main
 
-RUN chmod +x /app/whisper.cpp/build/bin/whisper-cli
+RUN ln -s /app/whisper.cpp/main /usr/local/bin/whisper-cli && \
+    chmod +x /app/whisper.cpp/main
 
 RUN wget -q -O /app/ggml-tiny.bin \
     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV WHISPER_CLI=/app/whisper.cpp/build/bin/whisper-cli
+ENV WHISPER_CLI=/usr/local/bin/whisper-cli
 ENV MODEL_PATH=/app/ggml-tiny.bin
 ENV PYTHONUNBUFFERED=1
 
