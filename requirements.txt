@@ -4,4 +4,3 @@ vosk
 pydub
 gtts
 requests
-pyaudioop
