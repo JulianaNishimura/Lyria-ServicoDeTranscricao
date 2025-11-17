@@ -22,15 +22,17 @@ MODEL_PATH = os.getenv("MODEL_PATH", "/app/ggml-tiny.bin")
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Verificar se arquivos existem no startup
 @app.on_event("startup")
 async def startup_event():
     whisper_exists = Path(WHISPER_CPP).exists()
     model_exists = Path(MODEL_PATH).exists()
+
     logger.info(f"Whisper binary exists: {whisper_exists} at {WHISPER_CPP}")
     logger.info(f"Model exists: {model_exists} at {MODEL_PATH}")
+
     if not whisper_exists:
         logger.error("WHISPER BINARY NOT FOUND!")
+
     if not model_exists:
         logger.error("MODEL FILE NOT FOUND!")
 
@@ -38,37 +40,29 @@ def transcrever_whisper(audio_bytes: bytes) -> str:
     if len(audio_bytes) < 2000:
         logger.warning("Audio too short, skipping transcription")
         return ""
-    
+
     try:
         logger.info("Converting audio format...")
         audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
-        # garantir 16kHz, mono, 16-bit (sample_width=2)
         audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
 
-        # salvar em arquivo temporário no filesystem (algumas builds não aceitam stdin)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             tmp_path = tmp.name
             audio.export(tmp_path, format="wav")
+
         logger.info(f"Converted audio size (file): {os.path.getsize(tmp_path)} bytes at {tmp_path}")
 
-        # verificar binário/modelo
         if not Path(WHISPER_CPP).exists():
             logger.error(f"Whisper binary not found at {WHISPER_CPP}")
-            try:
-                os.remove(tmp_path)
-            except:
-                pass
+            os.remove(tmp_path)
             return ""
+
         if not Path(MODEL_PATH).exists():
             logger.error(f"Model not found at {MODEL_PATH}")
-            try:
-                os.remove(tmp_path)
-            except:
-                pass
+            os.remove(tmp_path)
             return ""
 
         logger.info("Running whisper.cpp...")
-        # agora chamamos passando o arquivo temporário com -f
         result = subprocess.run(
             [
                 WHISPER_CPP,
@@ -83,43 +77,38 @@ def transcrever_whisper(audio_bytes: bytes) -> str:
             timeout=30
         )
 
-        # sempre remover o arquivo temporário
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
+        os.remove(tmp_path)
 
         if result.returncode != 0:
-            # log completo do stderr decodificado para debugging (importante)
-            stderr_text = result.stderr.decode("utf-8", errors="ignore")
-            stdout_text = result.stdout.decode("utf-8", errors="ignore") if result.stdout else ""
             logger.error(f"Whisper process failed with code {result.returncode}")
-            logger.error(f"Whisper stdout: {stdout_text[:800]}")
-            logger.error(f"Whisper stderr: {stderr_text[:2000]}")
+            logger.error(f"Whisper stdout: {result.stdout.decode('utf-8', errors='ignore')[:800]}")
+            logger.error(f"Whisper stderr: {result.stderr.decode('utf-8', errors='ignore')[:2000]}")
             return ""
 
-        texto = result.stdout.decode("utf-8", errors="ignore")
-        logger.info(f"Raw whisper output: {texto[:300]}")
+        texto_raw = result.stdout.decode("utf-8", errors="ignore")
+        logger.info(f"Raw whisper output: {texto_raw[:300]}")
 
-        # filtrar output irrelevante
         linhas = []
-        for l in texto.split("\n"):
+        for l in texto_raw.split("\n"):
             l_strip = l.strip()
-            if (l_strip and
+            if (
+                l_strip and
                 not l_strip.startswith("[") and
                 "warning:" not in l_strip.lower() and
                 "deprecated" not in l_strip.lower() and
-                "whisper_main" not in l_strip.lower() and
-                "github.com" not in l_strip.lower()):
+                "github.com" not in l_strip.lower()
+            ):
                 linhas.append(l_strip)
 
         final = " ".join(linhas).strip().lower()
         logger.info(f"Transcrito LIMPO: '{final}'")
+
         return final
 
     except subprocess.TimeoutExpired:
         logger.error("Whisper process timeout")
         return ""
+
     except Exception as e:
         logger.error(f"Erro Whisper: {e}", exc_info=True)
         return ""
@@ -143,6 +132,7 @@ async def enviar_comando_robo(acao: str, valor: int | None = None):
             payload = {"acao": acao}
             if valor is not None:
                 payload["valor"] = valor
+
             response = requests.post(f"{ROBOT_API}/comando", json=payload, timeout=5)
             logger.info(f"Robot command sent: {acao} {valor}, status: {response.status_code}")
         except Exception as e:
@@ -160,7 +150,7 @@ async def health_check():
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket connection accepted")
-    
+
     try:
         data = await websocket.receive_bytes()
         logger.info(f"Áudio recebido: {len(data)} bytes")
@@ -172,67 +162,60 @@ async def websocket_endpoint(websocket: WebSocket):
 
         resposta = "Desculpe, não entendi."
 
-        # Comandos de robô com wake word "lyria"
         if any(x in texto for x in ["lyria", "líria", "liria"]):
             logger.info(f"Wake word detected in: {texto}")
-            
+
             if any(x in texto for x in ["frente", "pra frente", "passo"]):
-                if "30" in texto or "bastante" in texto or "trinta" in texto:
+                if any(x in texto for x in ["30", "trinta", "bastante"]):
                     await enviar_comando_robo("frente", 30)
                     resposta = "Andando 30 centímetros para frente."
                 else:
                     await enviar_comando_robo("frente", 10)
                     resposta = "Andando 10 centímetros para frente."
-                    
+
             elif any(x in texto for x in ["trás", "recua", "recuar", "voltar"]):
                 await enviar_comando_robo("tras", 15)
                 resposta = "Andando para trás."
-                
+
             elif "esquerda" in texto:
                 await enviar_comando_robo("esquerda")
                 resposta = "Virando à esquerda."
-                
+
             elif "direita" in texto:
                 await enviar_comando_robo("direita")
                 resposta = "Virando à direita."
-                
+
             elif any(x in texto for x in ["parar", "pare", "stop"]):
                 await enviar_comando_robo("parar")
                 resposta = "Parando."
 
-            # Se comando foi reconhecido, enviar resposta e retornar
             if resposta != "Desculpe, não entendi.":
-                logger.info(f"Enviando resposta: {resposta}")
                 audio_response = texto_para_audio(resposta)
                 if audio_response and websocket.client_state == WebSocketState.CONNECTED:
                     await websocket.send_bytes(audio_response)
                     logger.info("Áudio de resposta enviado")
                 return
 
-        # Fallback para API de conversação
         if API_BACK:
             try:
-                logger.info(f"Enviando para API_BACK: {texto}")
                 r = requests.post(
-                    f"{API_BACK}/Lyria/conversar", 
-                    json={"pergunta": texto, "persona": "professor"}, 
+                    f"{API_BACK}/Lyria/conversar",
+                    json={"pergunta": texto, "persona": "professor"},
                     timeout=15
                 )
+
                 if r.ok:
                     resposta = r.json().get("resposta", resposta)
-                    logger.info(f"Resposta da API: {resposta}")
-                else:
-                    logger.error(f"API_BACK returned {r.status_code}")
             except Exception as e:
                 logger.error(f"Erro ao chamar API_BACK: {e}")
 
         audio_response = texto_para_audio(resposta)
         if audio_response and websocket.client_state == WebSocketState.CONNECTED:
             await websocket.send_bytes(audio_response)
-            logger.info("Áudio de resposta enviado")
 
     except Exception as e:
         logger.error(f"Erro no WebSocket: {e}", exc_info=True)
+
     finally:
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.close()
