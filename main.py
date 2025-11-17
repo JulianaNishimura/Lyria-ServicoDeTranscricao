@@ -20,6 +20,7 @@ app.add_middleware(
 )
 
 processador = ProcessaAudio()
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -34,6 +35,30 @@ async def websocket_endpoint(websocket: WebSocket):
             texto = "Não entendi o áudio."
 
         logger.info(f"🗣️ Texto reconhecido: '{texto}'")
+
+        t = texto.lower()
+
+        comando = False
+
+        if "frente" in t or "lyria ande para a frente" in t:
+            logger.info("✅ COMANDO DETECTADO: FRENTE")
+            comando = True
+
+        if "trás" in t or "tras" in t:
+            logger.info("✅ COMANDO DETECTADO: TRÁS")
+            comando = True
+
+        if "esquerda" in t:
+            logger.info("✅ COMANDO DETECTADO: ESQUERDA")
+            comando = True
+
+        if "direita" in t:
+            logger.info("✅ COMANDO DETECTADO: DIREITA")
+            comando = True
+
+        if comando:
+            await websocket.send_text("")
+            return
 
         resposta = "Desculpe, não entendi."
 
