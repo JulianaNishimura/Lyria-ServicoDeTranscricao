@@ -17,7 +17,7 @@ RUN git clone https://github.com/ggerganov/whisper.cpp.git /app/whisper.cpp && \
     WHISPER_NO_AVX=1 make -j$(nproc)
 
 RUN ls -lh /app/whisper.cpp/build/bin || true && \
-    chmod +x /app/whisper.cpp/build/bin/main
+    chmod +x /app/whisper.cpp/build/bin/whisper-cli
 
 RUN wget -q -O /app/ggml-tiny.bin \
     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin && \
@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV WHISPER_BIN=/app/whisper.cpp/build/bin/main
+ENV WHISPER_CPP=/app/whisper.cpp/build/bin/whisper-cli
 ENV MODEL_PATH=/app/ggml-tiny.bin
 ENV PYTHONUNBUFFERED=1
 

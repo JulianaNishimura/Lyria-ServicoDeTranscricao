@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 API_BACK = os.getenv("API_do_BACK")
 ROBOT_API = os.getenv("ROBOT_API")
-WHISPER_CPP = os.getenv("WHISPER_BIN", "/app/whisper.cpp/build/bin/main")
+WHISPER_CPP = "/app/whisper.cpp/build/bin/whisper-cli"
 MODEL_PATH = os.getenv("MODEL_PATH", "/app/ggml-tiny.bin")
 
 app = FastAPI()
@@ -68,8 +68,7 @@ def transcrever_whisper(audio_bytes: bytes) -> str:
                 WHISPER_CPP,
                 "-m", MODEL_PATH,
                 "-f", tmp_path,
-                "--language", "pt",
-                "--threads", "4",
+                "-l", "pt",
                 "--no-timestamps"
             ],
             stdout=subprocess.PIPE,
