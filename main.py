@@ -1,6 +1,5 @@
 import os
 import io
-import json
 import logging
 import requests
 import subprocess
@@ -15,9 +14,8 @@ logger = logging.getLogger(__name__)
 
 API_BACK = os.getenv("API_do_BACK")
 ROBOT_API = os.getenv("ROBOT_API")
-
 WHISPER_CPP = "/app/whisper.cpp/main"
-MODEL_PATH = "/app/whisper.cpp/models/ggml-tiny.bin" 
+MODEL_PATH = "/app/whisper.cpp/models/ggml-tiny.bin"
 
 app = FastAPI()
 
@@ -29,29 +27,27 @@ app.add_middleware(
 )
 
 def transcrever_whisper(m4a_bytes: bytes) -> str:
+    if len(m4a_bytes) < 1000:
+        return ""
     try:
-        audio = AudioSegment.from_file(io.BytesIO(m4a_bytes), format="m4a")
-        audio = audio.set_frame_rate(16000).set_channels(1)
+        audio = AudioSegment.from_file(io.BytesIO(m4a_bytes), format="aac")
+        audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
         wav_io = io.BytesIO()
         audio.export(wav_io, format="wav")
         wav_io.seek(0)
 
-        result = subprocess.run([
-            WHISPER_CPP,
-            "-m", MODEL_PATH,
-            "-f", "/dev/stdin",
-            "--language", "pt",
-            "--max-len", "1",
-            "--no-timestamps",
-            "--threads", "4"
-        ], input=wav_io.read(), capture_output=True, timeout=12)
+        result = subprocess.run(
+            [WHISPER_CPP, "-m", MODEL_PATH, "-f", "/dev/stdin", "--language", "pt", "--max-len", "1", "--no-timestamps", "--threads", "4"],
+            input=wav_io.read(),
+            capture_output=True,
+            timeout=12
+        )
 
         texto = result.stdout.decode("utf-8", errors="ignore")
         linhas = [l.strip() for l in texto.split("\n") if l.strip() and not l.startswith("[")]
         return " ".join(linhas).strip().lower()
 
     except subprocess.TimeoutExpired:
-        logger.warning("Whisper demorou demais")
         return ""
     except Exception as e:
         logger.error(f"Erro no Whisper: {e}")
@@ -90,7 +86,7 @@ async def websocket_endpoint(websocket: WebSocket):
         resposta = "Desculpe, não entendi."
 
         if any(nome in texto for nome in ["lyria", "líria", "liria"]):
-            if any(cmd in texto for cmd in ["frente", "um passo", "10 cm", "10 centímetros", "pra frente"]):
+            if any(cmd in texto for cmd in ["frente", "um passo", "10 cm", "10 centímetros", "pra frente", "pra frente"]):
                 await enviar_comando_robo("frente", 10)
                 resposta = "Andando 10 centímetros para frente."
 
@@ -115,8 +111,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 resposta = "Parando."
 
             if resposta != "Desculpe, não entendi.":
-                audio = texto_para_audio(resposta)
-                await websocket.send_bytes(audio)
+                await websocket.send_bytes(texto_para_audio(resposta))
                 return
 
         if API_BACK:
@@ -126,13 +121,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     json={"pergunta": texto, "persona": "professor"},
                     timeout=15
                 )
-                if r.ok:
-                    resposta = r.json().get("resposta", resposta)
+                resposta = r.json().get("resposta", resposta) if r.ok else "Tô com um probleminha agora, tenta de novo."
             except:
                 resposta = "Tô com um probleminha agora, tenta de novo."
 
-        audio_resposta = texto_para_audio(resposta)
-        await websocket.send_bytes(audio_resposta)
+        await websocket.send_bytes(texto_para_audio(resposta))
 
     except Exception as e:
         logger.error(f"Erro no WebSocket: {e}", exc_info=True)
